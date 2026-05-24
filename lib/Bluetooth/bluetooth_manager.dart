@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:untitled/Bluetooth/ble_constants.dart';
+import 'package:roady_car/Bluetooth/ble_constants.dart';
 
 class BluetoothManager extends ChangeNotifier {
   BluetoothDevice? _connectedDevice;
@@ -27,6 +27,11 @@ class BluetoothManager extends ChangeNotifier {
         Stream.value(BluetoothConnectionState.disconnected);
   }
 
+  // --- Buffer pour gérer la fragmentation BLE ---
+  String _dataBuffer = '';
+  final StreamController<List<int>> _defragmentedDataController =
+      StreamController<List<int>>.broadcast();
+
   Future<void> sendPriorityCommand(String command) async {
     if (_rxCharacteristic == null) return;
 
@@ -40,8 +45,14 @@ class BluetoothManager extends ChangeNotifier {
 
   Future<bool> _checkPermissions() async {
     if (Platform.isAndroid) {
-      final status = await Permission.locationWhenInUse.request();
-      if (!status.isGranted) {
+      // Pour Android 12+ (API 31+), bluetoothScan et bluetoothConnect sont requis.
+      Map<Permission, PermissionStatus> statuses = await [
+        Permission.locationWhenInUse,
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+      ].request();
+
+      if (statuses[Permission.locationWhenInUse] != PermissionStatus.granted) {
         return false;
       }
 
@@ -69,7 +80,7 @@ class BluetoothManager extends ChangeNotifier {
   @override
   void dispose() {
     _devicesController.close();
-    // ... autres nettoyages
+    _defragmentedDataController.close();
     super.dispose();
   }
 
@@ -117,6 +128,20 @@ class BluetoothManager extends ChangeNotifier {
                 await _txCharacteristic!.setNotifyValue(true);
                 _dataSubscription =
                     _txCharacteristic!.onValueReceived.listen((data) {
+                  // --- DEFRAGMENTATION DU BUFFER BLE ---
+                  final incomingStr = utf8.decode(data, allowMalformed: true);
+                  _dataBuffer += incomingStr;
+                  
+                  // Traiter toutes les trames complètes (séparées par \n)
+                  int newlineIndex;
+                  while ((newlineIndex = _dataBuffer.indexOf('\n')) != -1) {
+                    final completeFrame = _dataBuffer.substring(0, newlineIndex);
+                    _dataBuffer = _dataBuffer.substring(newlineIndex + 1);
+                    
+                    // On pousse la trame complète dans le flux défragmenté
+                    _defragmentedDataController.add(utf8.encode(completeFrame));
+                  }
+                  
                   notifyListeners();
                 });
               }
@@ -155,6 +180,7 @@ class BluetoothManager extends ChangeNotifier {
     if (_connectedDevice != null) {
       await _connectedDevice?.disconnect();
     }
+    _dataBuffer = '';
     _connectedDevice = null;
     _txCharacteristic = null;
     _rxCharacteristic = null;
@@ -174,7 +200,8 @@ class BluetoothManager extends ChangeNotifier {
 
   Stream<List<int>> get dataStream {
     _txCharacteristic ??= throw Exception('Not connected to device');
-    return _txCharacteristic!.onValueReceived;
+    // On retourne le flux défragmenté plutôt que les paquets bruts fragmentés
+    return _defragmentedDataController.stream;
   }
 }
 

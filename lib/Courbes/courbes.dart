@@ -1,13 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
+
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:roady_car/Bluetooth/bluetooth_manager.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'package:untitled/Bluetooth/bluetooth_manager.dart';
 
 class CourbesPage extends StatefulWidget {
   const CourbesPage({super.key});
@@ -113,15 +114,18 @@ class _CourbesPageState extends State<CourbesPage> {
   }
 
   void _processBluetoothData(List<int> data) {
-    final now = timeCounter.toDouble();
+    final now = timeCounter * 0.1; // 10 Hz = 0.1s par point
     timeCounter++;
 
     try {
-      final dataStr = String.fromCharCodes(data);
-      final parts = dataStr.split(',');
+      final dataStr = utf8.decode(data).trim();
 
-      if (parts.length == 4) {
-        // Adapté au nouveau format compact
+      // On ignore si ce n'est pas une trame de télémétrie (ex: Radar D:)
+      if (!dataStr.startsWith('T:')) return;
+
+      final parts = dataStr.substring(2).split(',');
+
+      if (parts.length >= 4) {
         final speed = double.tryParse(parts[0]) ?? 0;
         final gx = double.tryParse(parts[1]) ?? 0;
         final gy = double.tryParse(parts[2]) ?? 0;
@@ -164,14 +168,7 @@ class _CourbesPageState extends State<CourbesPage> {
     }
   }
 
-  double _calculateStability() {
-    if (gyroXData.isEmpty) return 10.0;
-    if (gyroXData.isEmpty || gyroXData.length < 2) return 0.0;
-    final variance =
-        gyroXData.map((d) => d.value * d.value).reduce((a, b) => a + b) /
-            gyroXData.length;
-    return (10 - sqrt(variance)).clamp(0, 10).toDouble();
-  }
+  // Score de stabilité retiré à la demande de l'utilisateur
 
   Future<void> _exportCSV() async {
     final bluetoothManager =
@@ -242,13 +239,6 @@ class _CourbesPageState extends State<CourbesPage> {
                           NumericAxis(title: AxisTitle(text: 'Value')),
                       series: _getChartSeries(),
                     ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              'Stability Score: ${_calculateStability().toStringAsFixed(1)}/10',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -341,38 +331,42 @@ class _CourbesPageState extends State<CourbesPage> {
       if (showSpeed && speedData.isNotEmpty)
         LineSeries<LiveData, double>(
           name: 'Speed (km/h)',
-          dataSource: speedData,
+          dataSource: speedData.toList(),
           color: Colors.blue,
           width: 2,
           xValueMapper: (LiveData data, _) => data.time,
           yValueMapper: (LiveData data, _) => data.value,
+          animationDuration: 0,
         ),
       if (showGyroX && gyroXData.isNotEmpty)
         LineSeries<LiveData, double>(
           name: 'Gyro X',
-          dataSource: gyroXData,
+          dataSource: gyroXData.toList(),
           color: Colors.red,
           width: 2,
           xValueMapper: (LiveData data, _) => data.time,
           yValueMapper: (LiveData data, _) => data.value,
+          animationDuration: 0,
         ),
       if (showGyroY && gyroYData.isNotEmpty)
         LineSeries<LiveData, double>(
           name: 'Gyro Y',
-          dataSource: gyroYData,
+          dataSource: gyroYData.toList(),
           color: Colors.green,
           width: 2,
           xValueMapper: (LiveData data, _) => data.time,
           yValueMapper: (LiveData data, _) => data.value,
+          animationDuration: 0,
         ),
       if (showGyroZ && gyroZData.isNotEmpty)
         LineSeries<LiveData, double>(
           name: 'Gyro Z',
-          dataSource: gyroZData,
+          dataSource: gyroZData.toList(),
           color: Colors.orange,
           width: 2,
           xValueMapper: (LiveData data, _) => data.time,
           yValueMapper: (LiveData data, _) => data.value,
+          animationDuration: 0,
         ),
     ];
   }
@@ -381,29 +375,41 @@ class _CourbesPageState extends State<CourbesPage> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Display Settings"),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildSwitchListTile('Show Speed', showSpeed,
-                    (val) => setState(() => showSpeed = val), Colors.blue),
-                _buildSwitchListTile('Show Gyro X', showGyroX,
-                    (val) => setState(() => showGyroX = val), Colors.red),
-                _buildSwitchListTile('Show Gyro Y', showGyroY,
-                    (val) => setState(() => showGyroY = val), Colors.green),
-                _buildSwitchListTile('Show Gyro Z', showGyroZ,
-                    (val) => setState(() => showGyroZ = val), Colors.orange),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text("Display Settings"),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildSwitchListTile('Show Speed', showSpeed, (val) {
+                      setDialogState(() => showSpeed = val);
+                      setState(() => showSpeed = val);
+                    }, Colors.blue),
+                    _buildSwitchListTile('Show Gyro X', showGyroX, (val) {
+                      setDialogState(() => showGyroX = val);
+                      setState(() => showGyroX = val);
+                    }, Colors.red),
+                    _buildSwitchListTile('Show Gyro Y', showGyroY, (val) {
+                      setDialogState(() => showGyroY = val);
+                      setState(() => showGyroY = val);
+                    }, Colors.green),
+                    _buildSwitchListTile('Show Gyro Z', showGyroZ, (val) {
+                      setDialogState(() => showGyroZ = val);
+                      setState(() => showGyroZ = val);
+                    }, Colors.orange),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('Close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Close'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
+            );
+          },
         );
       },
     );

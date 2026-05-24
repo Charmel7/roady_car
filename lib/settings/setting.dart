@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled/ThemeProvider.dart';
+import 'package:roady_car/ThemeProvider.dart';
 
 class Settings extends StatelessWidget {
   const Settings({super.key});

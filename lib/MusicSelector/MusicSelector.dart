@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled/Bluetooth/bluetooth_manager.dart';
+import 'package:roady_car/Bluetooth/bluetooth_manager.dart';
 
 class SoundSignalsPage extends StatefulWidget {
   const SoundSignalsPage({super.key});
@@ -43,17 +43,6 @@ class _SoundSignalsPageState extends State<SoundSignalsPage>
       "command": "3",
       "color": Colors.blue,
       "gradient": [Colors.blue, Colors.blue.shade800], // Ajouté
-    },
-    {
-      "name": "Musique",
-      "description": "Petit jingle amusant",
-      "icon": Icons.music_note,
-      "command": "MUSIC",
-      "color": Colors.purple,
-      "gradient": [
-        Colors.purple.shade300,
-        Colors.purple.shade600
-      ], // Déjà présent
     },
   ];
   late BluetoothManager _bluetoothManager;
